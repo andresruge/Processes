@@ -1,0 +1,1 @@
+public record ProcessRequest(string Name, int NumberOfSubprocesses, ProcessType ProcessType = ProcessType.ProcessTypeA);

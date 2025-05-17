@@ -1,0 +1,37 @@
+@Processes_HostAddress = http://localhost:5076
+
+# Root endpoint
+GET {{Processes_HostAddress}}/
+Accept: application/json
+
+###
+
+# Health endpoint
+GET {{Processes_HostAddress}}/health
+Accept: application/json
+
+###
+
+# Create a new Process
+POST {{Processes_HostAddress}}/processes
+Content-Type: application/json
+
+{
+  "name": "Sample Process",
+  "numberOfSubprocesses": 3,
+  "processType": "ProcessTypeA"
+}
+
+###
+
+# List all Processes
+GET {{Processes_HostAddress}}/processes
+Accept: application/json
+
+###
+
+# Get a Process by ID
+GET {{Processes_HostAddress}}/processes/680a99a09b269cb2fb59760f
+Accept: application/json
+
+###
