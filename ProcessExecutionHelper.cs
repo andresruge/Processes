@@ -8,18 +8,18 @@ public static class ProcessExecutionHelper
         Process process,
         IMongoCollection<Process> processesCollection,
         IMongoCollection<Subprocess> subprocessCollection,
-        ConcurrentDictionary<ObjectId, CancellationTokenSource> cancellationTokenSources,
+        // ConcurrentDictionary<ObjectId, CancellationTokenSource> cancellationTokenSources, // Removed
         ObjectId objectId,
         bool resumeOnly,
-        CancellationTokenSource cts)
+        CancellationToken cancellationToken) // Changed from CancellationTokenSource to CancellationToken
     {
         switch (process.ProcessType)
         {
             case ProcessType.ProcessTypeA:
-                await ExecuteTypeAAsync(process, processesCollection, subprocessCollection, objectId, resumeOnly, cts);
+                await ExecuteTypeAAsync(process, processesCollection, subprocessCollection, objectId, resumeOnly, cancellationToken);
                 break;
             case ProcessType.ProcessTypeB:
-                await ExecuteTypeBAsync(process, processesCollection, subprocessCollection, objectId, resumeOnly, cts);
+                await ExecuteTypeBAsync(process, processesCollection, subprocessCollection, objectId, resumeOnly, cancellationToken);
                 break;
             default:
                 throw new NotSupportedException($"ProcessType {process.ProcessType} is not supported.");
@@ -32,7 +32,7 @@ public static class ProcessExecutionHelper
         IMongoCollection<Subprocess> subprocessCollection,
         ObjectId objectId,
         bool resumeOnly,
-        CancellationTokenSource cts)
+        CancellationToken cancellationToken) // Changed
     {
         var subprocesses = await subprocessCollection.Find(s => s.ParentProcessId == objectId).ToListAsync();
         var subprocessTasks = process.Subprocesses.Select(async kvp =>
@@ -58,7 +58,7 @@ public static class ProcessExecutionHelper
                     UpdatedAt = DateTime.UtcNow,
                     Steps = steps
                 };
-                await subprocessCollection.InsertOneAsync(subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.InsertOneAsync(subprocess, cancellationToken: cancellationToken);
             }
             if (resumeOnly)
             {
@@ -73,23 +73,23 @@ public static class ProcessExecutionHelper
                 {
                     subprocess.Steps[step] = subprocess.Steps[step] with { Status = ProcessStatus.NotStarted };
                 }
-                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
             }
             subprocess.Status = ProcessStatus.Running;
             subprocess.UpdatedAt = DateTime.UtcNow;
-            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
             foreach (var step in subprocess.Steps.Keys.ToList())
             {
-                cts.Token.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
                 if (resumeOnly && subprocess.Steps[step].Status == ProcessStatus.Completed)
                     continue;
                 // Set step to Running and record StartedAt
                 subprocess.Steps[step] = subprocess.Steps[step] with { Status = ProcessStatus.Running, StartedAt = DateTime.UtcNow, CompletedAt = null, ErrorMessage = null };
                 subprocess.UpdatedAt = DateTime.UtcNow;
-                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
                 try
                 {
-                    await Task.Delay(subprocess.Steps[step].TimeoutSeconds * 1000, cts.Token);
+                    await Task.Delay(subprocess.Steps[step].TimeoutSeconds * 1000, cancellationToken);
                     // Set step to Completed and record CompletedAt
                     subprocess.Steps[step] = subprocess.Steps[step] with { Status = ProcessStatus.Completed, CompletedAt = DateTime.UtcNow };
                 }
@@ -106,11 +106,11 @@ public static class ProcessExecutionHelper
                     throw;
                 }
                 subprocess.UpdatedAt = DateTime.UtcNow;
-                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
             }
             subprocess.Status = ProcessStatus.Completed;
             subprocess.UpdatedAt = DateTime.UtcNow;
-            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
         });
         await Task.WhenAll(subprocessTasks);
         var allSubprocesses = await subprocessCollection.Find(s => s.ParentProcessId == objectId).ToListAsync();
@@ -123,7 +123,7 @@ public static class ProcessExecutionHelper
             process.Status = ProcessStatus.Interrupted;
         }
         process.UpdatedAt = DateTime.UtcNow;
-        await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process, cancellationToken: cts.Token);
+        await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process, cancellationToken: cancellationToken);
     }
 
     private static async Task ExecuteTypeBAsync(
@@ -132,7 +132,7 @@ public static class ProcessExecutionHelper
         IMongoCollection<Subprocess> subprocessCollection,
         ObjectId objectId,
         bool resumeOnly,
-        CancellationTokenSource cts)
+        CancellationToken cancellationToken) // Changed
     {
         var subprocesses = await subprocessCollection.Find(s => s.ParentProcessId == objectId).ToListAsync();
         var subprocessTasks = process.Subprocesses.Select(async kvp =>
@@ -158,7 +158,7 @@ public static class ProcessExecutionHelper
                     UpdatedAt = DateTime.UtcNow,
                     Steps = steps
                 };
-                await subprocessCollection.InsertOneAsync(subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.InsertOneAsync(subprocess, cancellationToken: cancellationToken);
             }
             if (resumeOnly)
             {
@@ -173,24 +173,24 @@ public static class ProcessExecutionHelper
                 {
                     subprocess.Steps[step] = subprocess.Steps[step] with { Status = ProcessStatus.NotStarted };
                 }
-                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
             }
             subprocess.Status = ProcessStatus.Running;
             subprocess.UpdatedAt = DateTime.UtcNow;
-            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
             foreach (var step in subprocess.Steps.Keys.ToList())
             {
-                cts.Token.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
                 if (resumeOnly && subprocess.Steps[step].Status == ProcessStatus.Completed)
                     continue;
                 // Set step to Running and record StartedAt
                 subprocess.Steps[step] = subprocess.Steps[step] with { Status = ProcessStatus.Running, StartedAt = DateTime.UtcNow, CompletedAt = null, ErrorMessage = null };
                 Console.WriteLine($"[ProcessTypeB] Subprocess {subprocess.Name} - {step} set to Running");
                 subprocess.UpdatedAt = DateTime.UtcNow;
-                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
                 try
                 {
-                    await Task.Delay(subprocess.Steps[step].TimeoutSeconds * 1000, cts.Token);
+                    await Task.Delay(subprocess.Steps[step].TimeoutSeconds * 1000, cancellationToken);
                     // Set step to Completed and record CompletedAt
                     subprocess.Steps[step] = subprocess.Steps[step] with { Status = ProcessStatus.Completed, CompletedAt = DateTime.UtcNow };
                     Console.WriteLine($"[ProcessTypeB] Subprocess {subprocess.Name} - {step} set to Completed");
@@ -208,11 +208,11 @@ public static class ProcessExecutionHelper
                     throw;
                 }
                 subprocess.UpdatedAt = DateTime.UtcNow;
-                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+                await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
             }
             subprocess.Status = ProcessStatus.Completed;
             subprocess.UpdatedAt = DateTime.UtcNow;
-            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cts.Token);
+            await subprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess, cancellationToken: cancellationToken);
         });
         await Task.WhenAll(subprocessTasks);
         var allSubprocesses = await subprocessCollection.Find(s => s.ParentProcessId == objectId).ToListAsync();
@@ -225,6 +225,6 @@ public static class ProcessExecutionHelper
             process.Status = ProcessStatus.Interrupted;
         }
         process.UpdatedAt = DateTime.UtcNow;
-        await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process, cancellationToken: cts.Token);
+        await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process, cancellationToken: cancellationToken);
     }
 }

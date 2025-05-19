@@ -12,4 +12,7 @@ public record Process
     public ProcessStatus Status { get; set; } = ProcessStatus.NotStarted;
     public Dictionary<string, string> Subprocesses { get; init; } = [];
     public ProcessType ProcessType { get; init; } = ProcessType.ProcessTypeA;
+    public string? HangfireJobId { get; set; }
+    // In Process.cs
+    public string? ErrorMessage { get; set; }
 }

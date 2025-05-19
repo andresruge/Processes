@@ -1,7 +1,10 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
-using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Mvc;
+using Hangfire;
+using Hangfire.Mongo;
+using Hangfire.Mongo.Migration.Strategies;
+using Hangfire.Mongo.Migration.Strategies.Backup;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,19 +20,49 @@ builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var mongoClient = new MongoClient("mongodb://localhost:27017");
+var mongoConnectionString = builder.Configuration.GetConnectionString("MongoDbConnection") ?? "mongodb://localhost:27017";
+var mongoClient = new MongoClient(mongoConnectionString);
 builder.Services.AddSingleton<IMongoClient>(mongoClient);
+
+// Register our custom Job Executor
+builder.Services.AddScoped<ProcessJobExecutor>();
+
+// Configure Newtonsoft.Json settings for Hangfire
+var hangfireJsonSettings = new Newtonsoft.Json.JsonSerializerSettings();
+hangfireJsonSettings.Converters.Add(new ObjectIdNewtonsoftConverter()); // Add our custom converter
+
+// Configure Hangfire
+builder.Services.AddHangfire(configuration => configuration
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180) // Or latest compatible
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings(settings => {
+        settings.Converters.Add(new ObjectIdNewtonsoftConverter());
+    }) // Pass your custom settings here
+    .UseMongoStorage(mongoClient, databaseName: "LocalProcessesHangfire", new MongoStorageOptions // Using a separate DB or prefix for Hangfire collections
+    {
+        MigrationOptions = new MongoMigrationOptions
+        {
+            MigrationStrategy = new MigrateMongoMigrationStrategy(),
+            BackupStrategy = new NoneMongoBackupStrategy() // Or CollectionMongoBackupStrategy for backups
+        },
+        Prefix = "hangfire", // Prefix for Hangfire collections
+        CheckQueuedJobsStrategy = CheckQueuedJobsStrategy.TailNotificationsCollection // More responsive for job pickup
+    }));
+
+// Add Hangfire server - this is what processes jobs
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = Environment.ProcessorCount * 2; // Adjust as needed
+    options.Queues = ["default"]; // You can define multiple queues
+});
+
 builder.Services.AddSingleton<StartupRecoveryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<StartupRecoveryService>());
-builder.Services.AddHostedService<ProcessWorkerService>();
-builder.Services.AddSingleton(new ConcurrentDictionary<ObjectId, CancellationTokenSource>());
 
 var app = builder.Build();
 
 var database = mongoClient.GetDatabase("LocalProcesses");
 var processesCollection = database.GetCollection<Process>("Processes");
-
-var cancellationTokenSources = app.Services.GetRequiredService<ConcurrentDictionary<ObjectId, CancellationTokenSource>>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -42,6 +75,13 @@ if (app.Environment.IsDevelopment())
         options.SupportedSubmitMethods([Swashbuckle.AspNetCore.SwaggerUI.SubmitMethod.Get, Swashbuckle.AspNetCore.SwaggerUI.SubmitMethod.Post, Swashbuckle.AspNetCore.SwaggerUI.SubmitMethod.Put, Swashbuckle.AspNetCore.SwaggerUI.SubmitMethod.Delete]);
     });
 }
+
+// Use Hangfire Dashboard
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    // IMPORTANT: Secure the dashboard in production!
+    Authorization = [ new LocalRequestsOnlyAuthorizationFilter() ] // Example: Local access only
+});
 
 app.UseHttpsRedirection();
 
@@ -107,7 +147,54 @@ app.MapGet("/processes/{id}", async (string id) =>
 }).WithName("GetProcessById");
 
 // Update the endpoint to flag a Process as 'NotStarted' and update its timestamp
-app.MapPost("/processes/{id}/start", async (string id) =>
+app.MapPost("/processes/{id}/start", async (string id, IBackgroundJobClient backgroundJobClient) =>
+{
+    if (!ObjectId.TryParse(id, out var objectId))
+    {
+        return Results.BadRequest("Invalid ID format.");
+    }
+    
+    var process = await processesCollection.Find(p => p.Id == objectId).FirstOrDefaultAsync();
+    if (process is null)
+    {
+        return Results.NotFound("Process not found.");
+    }
+
+    // Allow start if NotStarted, Reverted, Cancelled, or Interrupted
+    if (process.Status == ProcessStatus.Running)
+    {
+        return Results.BadRequest("Process is already running.");
+    }
+    if (process.Status == ProcessStatus.Completed)
+    {
+         return Results.BadRequest("Process is already completed.");
+    }
+
+    // Check if there's an existing active Hangfire job
+    if (!string.IsNullOrEmpty(process.HangfireJobId))
+    {
+        var jobData = JobStorage.Current?.GetMonitoringApi()?.JobDetails(process.HangfireJobId);
+        if (jobData != null && (jobData.History[0].StateName == "Enqueued" || jobData.History[0].StateName == "Scheduled" || jobData.History[0].StateName == "Processing"))
+        {
+            return Results.BadRequest($"Process already has an active or queued job (Job ID: {process.HangfireJobId}).");
+        }
+    }
+
+    // Enqueue the job with Hangfire
+    var hangfireJobId = backgroundJobClient.Enqueue<ProcessJobExecutor>(executor => executor.ExecuteProcessJobAsync(objectId, false, JobCancellationToken.Null));
+
+    // Update the Process status to 'NotStarted' (or 'Queued') and store HangfireJobId
+    process.Status = ProcessStatus.NotStarted; // Hangfire job will set it to Running
+    process.UpdatedAt = DateTime.UtcNow;
+    process.HangfireJobId = hangfireJobId;
+    process.ErrorMessage = null; // Clear previous errors
+    await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process);
+
+    return Results.Ok($"Process has been queued with Hangfire (Job ID: {hangfireJobId}).");
+}).WithName("StartProcess");
+
+// Add an endpoint to cancel a running Process
+app.MapPost("/processes/{id}/cancel", async (string id, IBackgroundJobClient backgroundJobClient) =>
 {
     if (!ObjectId.TryParse(id, out var objectId))
     {
@@ -115,43 +202,18 @@ app.MapPost("/processes/{id}/start", async (string id) =>
     }
 
     var process = await processesCollection.Find(p => p.Id == objectId).FirstOrDefaultAsync();
-    if (process is null)
+    if (process is null) return Results.NotFound("Process not found.");
+
+    if (string.IsNullOrEmpty(process.HangfireJobId))
     {
-        return Results.NotFound("Process not found.");
+        return Results.BadRequest("Process does not have an active Hangfire job to cancel. If it's NotStarted, you can revert or ignore.");
     }
 
-    // Default to ProcessTypeA if missing (backward compatibility)
-    var processType = process.GetType().GetProperty("ProcessType") != null ? process.ProcessType : ProcessType.ProcessTypeA;
-
-    // Allow start if NotStarted, Reverted, Cancelled, or Interrupted
-    if (process.Status == ProcessStatus.Running || process.Status == ProcessStatus.Completed)
-    {
-        return Results.BadRequest("Process is already running or completed.");
-    }
-
-    // Update the Process status to 'NotStarted' and update the UpdatedAt field
-    process.Status = ProcessStatus.NotStarted;
-    process.UpdatedAt = DateTime.UtcNow;
-    await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process);
-
-    return Results.Ok("Process has been queued and will be started by the background worker.");
-}).WithName("StartProcess");
-
-// Add an endpoint to cancel a running Process
-app.MapPost("/processes/{id}/cancel", (string id) =>
-{
-    if (!ObjectId.TryParse(id, out var objectId))
-    {
-        return Results.BadRequest("Invalid ID format.");
-    }
-
-    if (cancellationTokenSources.TryGetValue(objectId, out var cts))
-    {
-        cts.Cancel();
-        return Results.Ok("Process cancellation requested.");
-    }
-
-    return Results.NotFound("No running process found with the specified ID.");
+    bool deleted = backgroundJobClient.Delete(process.HangfireJobId);
+    // Deleting the job will trigger the CancellationToken in the ProcessJobExecutor if the job is running.
+    // The ProcessJobExecutor's cancellation handling will update the process status.
+    return deleted ? Results.Ok($"Cancellation request sent for Hangfire job {process.HangfireJobId}.")
+                   : Results.BadRequest($"Could not cancel Hangfire job {process.HangfireJobId}. It might have already completed or failed.");
 }).WithName("CancelProcess");
 
 // Add an endpoint to revert a previously cancelled or interrupted Process
@@ -200,13 +262,13 @@ app.MapPost("/processes/{id}/revert", async (string id) =>
 }).WithName("RevertProcess");
 
 // Add an endpoint to resume an Interrupted or NotStarted Process (only resumes incomplete subprocesses/steps)
-app.MapPost("/processes/{id}/resume", async (string id) =>
+app.MapPost("/processes/{id}/resume", async (string id, IBackgroundJobClient backgroundJobClient) =>
 {
     if (!ObjectId.TryParse(id, out var objectId))
     {
         return Results.BadRequest("Invalid ID format.");
     }
-
+    
     var process = await processesCollection.Find(p => p.Id == objectId).FirstOrDefaultAsync();
     if (process is null)
     {
@@ -214,66 +276,34 @@ app.MapPost("/processes/{id}/resume", async (string id) =>
     }
 
     // Only allow resume if NotStarted, Interrupted, or Cancelled
-    if (process.Status == ProcessStatus.Running || process.Status == ProcessStatus.Completed)
+    if (process.Status == ProcessStatus.Running)
     {
-        return Results.BadRequest("Process is already running or completed.");
+        return Results.BadRequest("Process is already running.");
+    }
+     if (process.Status == ProcessStatus.Completed)
+    {
+        return Results.BadRequest("Process is already completed.");
     }
 
-    // Update the Process status to 'Running' and update the UpdatedAt field
-    process.Status = ProcessStatus.Running;
-    process.UpdatedAt = DateTime.UtcNow;
-    await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process);
-
-    // Create a CancellationTokenSource for this Process
-    var cts = new CancellationTokenSource();
-    cancellationTokenSources[objectId] = cts;
-
-    // Start resuming in the background
-    _ = Task.Run(async () =>
+    // Check if there's an existing active Hangfire job
+    if (!string.IsNullOrEmpty(process.HangfireJobId))
     {
-        var subprocessCollection = database.GetCollection<Subprocess>("SubProcess");
-        try
+        var jobData = JobStorage.Current?.GetMonitoringApi()?.JobDetails(process.HangfireJobId);
+        if (jobData != null && (jobData.History[0].StateName == "Enqueued" || jobData.History[0].StateName == "Scheduled" || jobData.History[0].StateName == "Processing"))
         {
-            await ProcessExecutionHelper.ExecuteProcessAsync(
-                process,
-                processesCollection,
-                subprocessCollection,
-                cancellationTokenSources,
-                objectId,
-                true,
-                cts);
+            return Results.BadRequest($"Process already has an active or queued job (Job ID: {process.HangfireJobId}). Cancel it first if you wish to resume differently.");
         }
-        catch (OperationCanceledException)
-        {
-            // Handle cancellation
-            process.Status = ProcessStatus.Cancelled;
-            process.UpdatedAt = DateTime.UtcNow;
-            await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process);
-            // Update Subprocesses and their Steps to 'Cancelled'
-            var childrenSubprocessCollection = database.GetCollection<Subprocess>("SubProcess");
-            var subprocesses = await childrenSubprocessCollection.Find(s => s.ParentProcessId == objectId).ToListAsync();
-            foreach (var subprocess in subprocesses)
-            {
-                if (subprocess.Status == ProcessStatus.Completed)
-                    continue;
-                subprocess.Status = ProcessStatus.Cancelled;
-                subprocess.UpdatedAt = DateTime.UtcNow;
-                foreach (var step in subprocess.Steps.Keys.ToList())
-                {
-                    if (subprocess.Steps[step].Status != ProcessStatus.Completed)
-                    {
-                        subprocess.Steps[step] = subprocess.Steps[step] with { Status = ProcessStatus.Cancelled };
-                    }
-                }
-                await childrenSubprocessCollection.ReplaceOneAsync(s => s.Id == subprocess.Id, subprocess);
-            }
-        }
-        finally
-        {
-            cancellationTokenSources.TryRemove(objectId, out _);
-        }
-    });
-    return Results.Ok("Process resume requested. Only incomplete subprocesses/steps will be resumed.");
+    }
+
+    // Enqueue the job with Hangfire for resuming
+    var hangfireJobId = backgroundJobClient.Enqueue<ProcessJobExecutor>(executor => executor.ExecuteProcessJobAsync(objectId, true, JobCancellationToken.Null));
+
+    process.Status = ProcessStatus.Interrupted; // Or NotStarted; Hangfire job will set it to Running
+    process.UpdatedAt = DateTime.UtcNow;
+    process.HangfireJobId = hangfireJobId;
+    process.ErrorMessage = null; // Clear previous errors
+    await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process);
+    return Results.Ok($"Process resume has been queued with Hangfire (Job ID: {hangfireJobId}).");
 }).WithName("ResumeProcess");
 
 // Add an endpoint to list all Subprocesses
