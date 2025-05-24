@@ -369,3 +369,5 @@ if (isApiEnabled)
 }
 
 app.Run();
+
+public partial class Program { }
