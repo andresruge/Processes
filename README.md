@@ -9,6 +9,19 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 - Background job execution with Hangfire and MongoDB
 - OpenAPI/Swagger documentation
 - Secure Hangfire dashboard (local access by default)
+- **Automated API endpoint tests with xUnit**
+
+## Project Structure
+
+```
+/Processes.sln
+/Processes/              # Main API & Worker project
+    Processes.csproj
+    ...
+/Processes.Tests/         # xUnit test project for API endpoints
+    Processes.Tests.csproj
+    ProcessesUnitTests.cs
+```
 
 ## Prerequisites
 
@@ -26,7 +39,7 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 
 2. **Configure environment variables:**
 
-   - Copy `appsettings.json` or `appsettings.Development.json` and adjust as needed.
+   - Copy `Processes/appsettings.json` or `Processes/appsettings.Development.json` and adjust as needed.
    - Set `MongoDbConnection` in your configuration or environment.
    - Optionally set `ApplicationRole` to `API`, `WORKER`, or `API_AND_WORKER`.
 
@@ -39,7 +52,7 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 
 4. **Run the application:**
    ```powershell
-   dotnet run
+   dotnet run --project Processes/Processes.csproj
    ```
    - The API will be available at `https://localhost:5001` (default).
    - Swagger UI: `https://localhost:5001/swagger`
@@ -57,6 +70,9 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 - `GET    /subprocesses` - List all subprocesses
 - `GET    /subprocesses/{id}` - Get subprocess by ID
 - `GET    /processes/{parentProcessId}/subprocesses` - List subprocesses for a process
+- `GET    /health` - Health check
+- `GET    /ready` - Readiness check
+- `GET    /` - Root welcome
 
 ## Environment Variables
 
@@ -68,8 +84,14 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 ## Development & Testing
 
 - Code style: C# conventions, see source for details.
+- **Automated tests:**
+  - xUnit tests for API endpoints are in `Processes.Tests/ProcessesUnitTests.cs`.
+  - Run all tests with:
+    ```powershell
+    dotnet test
+    ```
+  - Tests cover health, readiness, root, process and subprocess endpoints, and error handling for invalid input.
 - Unit and integration tests should be added for new features (minimum 80% coverage recommended).
-- Use `dotnet test` to run tests.
 
 ## Security
 
