@@ -86,11 +86,12 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 - Code style: C# conventions, see source for details.
 - **Automated tests:**
   - xUnit tests for API endpoints are in `Processes.Tests/ProcessesUnitTests.cs`.
+  - Logic/unit tests for core business logic are in `Processes.Tests/LogicUnitTests.cs` and use Moq for mocking dependencies.
   - Run all tests with:
     ```powershell
     dotnet test
     ```
-  - Tests cover health, readiness, root, process and subprocess endpoints, and error handling for invalid input.
+  - Tests cover health, readiness, root, process and subprocess endpoints, error handling for invalid input, and core business logic.
 - Unit and integration tests should be added for new features (minimum 80% coverage recommended).
 
 ## Security
