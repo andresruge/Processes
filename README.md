@@ -1,6 +1,6 @@
-# Processes API & Worker
+# Processes API, Worker & Frontend
 
-A minimal .NET 9 Web API and background worker for managing and executing long-running processes and subprocesses, using MongoDB for persistence and Hangfire for background job scheduling.
+A minimal .NET 9 Web API and background worker for managing and executing long-running processes, using MongoDB for persistence and Hangfire for background job scheduling. Now includes a React + Vite + TypeScript frontend for interacting with the API.
 
 ## Features
 
@@ -10,6 +10,7 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 - OpenAPI/Swagger documentation
 - Secure Hangfire dashboard (local access by default)
 - **Automated API endpoint tests with xUnit**
+- **Frontend UI with React (Vite + TypeScript)**
 
 ## Project Structure
 
@@ -21,12 +22,17 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 /Processes.Tests/         # xUnit test project for API endpoints
     Processes.Tests.csproj
     ProcessesUnitTests.cs
+/Processes.Frontend/      # React + Vite + TypeScript frontend
+    package.json
+    src/
+    ...
 ```
 
 ## Prerequisites
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download)
 - [MongoDB](https://www.mongodb.com/try/download/community)
+- [Node.js 18+ and npm](https://nodejs.org/)
 
 ## Getting Started
 
@@ -39,24 +45,34 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 
 2. **Configure environment variables:**
 
-   - Copy `Processes/appsettings.json` or `Processes/appsettings.Development.json` and adjust as needed.
+   - For the API, copy `Processes/appsettings.json` or `Processes/appsettings.Development.json` and adjust as needed.
    - Set `MongoDbConnection` in your configuration or environment.
    - Optionally set `ApplicationRole` to `API`, `WORKER`, or `API_AND_WORKER`.
+   - For the frontend, copy `Processes.Frontend/.env.example` to `.env` and set `VITE_API_URL` to your API base URL (e.g., `http://localhost:5000`).
 
 3. **Restore dependencies and build:**
 
    ```powershell
    dotnet restore
    dotnet build
+   cd Processes.Frontend
+   npm install
    ```
 
 4. **Run the application:**
-   ```powershell
-   dotnet run --project Processes/Processes.csproj
-   ```
-   - The API will be available at `https://localhost:5001` (default).
-   - Swagger UI: `https://localhost:5001/swagger`
-   - Hangfire Dashboard: `https://localhost:5001/hangfire`
+   - **API:**
+     ```powershell
+     dotnet run --project Processes/Processes.csproj
+     ```
+     - The API will be available at `https://localhost:5001` (default).
+     - Swagger UI: `https://localhost:5001/swagger`
+     - Hangfire Dashboard: `https://localhost:5001/hangfire`
+   - **Frontend:**
+     ```powershell
+     cd Processes.Frontend
+     npm run dev
+     ```
+     - The frontend will be available at `http://localhost:5173` (default).
 
 ## API Endpoints
 
@@ -78,18 +94,24 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 
 - `MongoDbConnection` - MongoDB connection string (default: `mongodb://localhost:27017`)
 - `ApplicationRole` - Role for this instance: `API`, `WORKER`, or `API_AND_WORKER`
+- `VITE_API_URL` - (Frontend) Base URL for the API (e.g., `http://localhost:5000`)
 
 > **Tip:** Use a `.env` file or set environment variables in your shell. Document new variables in `.env.example`.
 
 ## Development & Testing
 
-- Code style: C# conventions, see source for details.
+- Code style: C# conventions for backend, TypeScript/React conventions for frontend.
 - **Automated tests:**
   - xUnit tests for API endpoints are in `Processes.Tests/ProcessesUnitTests.cs`.
   - Logic/unit tests for core business logic are in `Processes.Tests/LogicUnitTests.cs` and use Moq for mocking dependencies.
-  - Run all tests with:
+  - Run all backend tests with:
     ```powershell
     dotnet test
+    ```
+  - Frontend tests (if present) can be run with:
+    ```powershell
+    cd Processes.Frontend
+    npm test
     ```
   - Tests cover health, readiness, root, process and subprocess endpoints, error handling for invalid input, and core business logic.
 - Unit and integration tests should be added for new features (minimum 80% coverage recommended).
@@ -101,7 +123,7 @@ A minimal .NET 9 Web API and background worker for managing and executing long-r
 
 ## Version Control
 
-- Build artifacts in `bin/` and `obj/` are ignored via `.gitignore`.
+- Build artifacts in `bin/`, `obj/`, and `Processes.Frontend/node_modules/` are ignored via `.gitignore`.
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 - Keep commits atomic and focused.
 
@@ -111,4 +133,4 @@ See [changelog.md](changelog.md) for release history and semantic versioning.
 
 ---
 
-_Generated on 2025-05-23. Update this README as the project evolves._
+_Generated on 2025-05-30. Update this README as the project evolves._

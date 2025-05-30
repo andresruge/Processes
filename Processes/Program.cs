@@ -68,6 +68,17 @@ if (isWorkerEnabled || isApiEnabled) // Hangfire client (for enqueueing) might b
     }
 }
 
+// CORS policy for React frontend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddSingleton<StartupRecoveryService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<StartupRecoveryService>());
 
@@ -100,6 +111,8 @@ if (isApiEnabled)
     }
 
     app.UseHttpsRedirection();
+    // Enable CORS for frontend
+    app.UseCors("FrontendPolicy");
 
     app.MapGet("/", () => "Welcome to the Minimal Web API!").WithName("Root");
 
