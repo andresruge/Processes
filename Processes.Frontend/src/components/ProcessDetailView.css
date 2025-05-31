@@ -1,0 +1,144 @@
+.process-detail-container {
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.process-detail-title {
+  color: #333;
+  margin-bottom: 15px;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 10px;
+}
+
+.process-detail-container p {
+  margin-bottom: 8px;
+  color: #555;
+}
+
+.process-error-message {
+  color: #d9534f; /* Red for errors */
+  font-weight: bold;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #d9534f;
+  background-color: #fdf7f7;
+  border-radius: 4px;
+}
+
+.process-actions {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.action-button {
+  padding: 10px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.2s ease;
+  color: white;
+}
+
+.action-button.start {
+  background-color: #5cb85c; /* Green */
+}
+.action-button.start:hover:not(:disabled) {
+  background-color: #4cae4c;
+}
+
+.action-button.cancel {
+  background-color: #f0ad4e; /* Orange */
+}
+.action-button.cancel:hover:not(:disabled) {
+  background-color: #ec971f;
+}
+
+.action-button.revert {
+  background-color: #5bc0de; /* Blue */
+}
+.action-button.revert:hover:not(:disabled) {
+  background-color: #31b0d5;
+}
+
+.action-button.resume {
+  background-color: #0275d8; /* Darker Blue */
+}
+.action-button.resume:hover:not(:disabled) {
+  background-color: #025aa5;
+}
+
+.action-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.subprocesses-title {
+  color: #333;
+  margin-top: 30px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 5px;
+}
+
+.subprocesses-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+.subprocesses-table th,
+.subprocesses-table td {
+  border: 1px solid #ddd;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.subprocesses-table th {
+  background-color: #eef;
+  font-weight: bold;
+  color: #333;
+}
+
+.subprocesses-table tbody tr:nth-child(even) {
+  background-color: #f6f6f6;
+}
+
+.subprocesses-table ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.subprocesses-table li {
+  margin-bottom: 5px;
+}
+
+.step-error {
+  color: #d9534f;
+  font-weight: normal;
+}
+
+.subprocess-error-message {
+  color: #d9534f;
+  font-weight: bold;
+  margin-top: 5px;
+}
+
+.back-link {
+  display: inline-block;
+  margin-top: 20px;
+  color: #007bff;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}

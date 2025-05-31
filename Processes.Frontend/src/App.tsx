@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import { fetchProcesses, createProcess } from "./api";
 import type { Process } from "./api";
 import "./App.css";
 import ProcessForm from "./components/ProcessForm";
 import ProcessTable from "./components/ProcessTable";
+import ProcessDetailView from "./components/ProcessDetailView"; // New import
 
 /**
  * Main App component for Processes.Frontend
@@ -16,13 +18,27 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState<boolean>(false);
 
+  // Function to refresh processes
+  const refreshProcesses = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const fetchedProcesses = await fetchProcesses();
+      setProcesses(fetchedProcesses);
+    } catch (e) {
+      if (e instanceof Error) {
+        setError(e.message);
+      } else {
+        setError("Unknown error");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Fetch processes on mount
   useEffect(() => {
-    setLoading(true);
-    fetchProcesses()
-      .then(setProcesses)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+    refreshProcesses();
   }, []);
 
   /**
@@ -32,8 +48,8 @@ function App() {
     setCreating(true);
     setError(null);
     try {
-      const created = await createProcess(name, subCount, type);
-      setProcesses([created, ...processes]);
+      await createProcess(name, subCount, type);
+      await refreshProcesses(); // Refresh the list after creation
     } catch (e) {
       if (e instanceof Error) {
         setError(e.message);
@@ -46,11 +62,35 @@ function App() {
   }
 
   return (
-    <div className="app-container">
-      <h1 className="app-title">Processes</h1>
-      <ProcessForm onCreate={handleCreate} creating={creating} />
-      <ProcessTable processes={processes} loading={loading} error={error} />
-    </div>
+    <Router>
+      <div className="app-container">
+        <h1 className="app-title">
+          <Link to="/" className="app-title-link">
+            Processes
+          </Link>
+        </h1>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <ProcessForm onCreate={handleCreate} creating={creating} />
+                <ProcessTable
+                  processes={processes}
+                  loading={loading}
+                  error={error}
+                  onProcessAction={refreshProcesses} // Pass refresh function
+                />
+              </>
+            }
+          />
+          <Route
+            path="/processes/:id"
+            element={<ProcessDetailView onProcessAction={refreshProcesses} />}
+          />
+        </Routes>
+      </div>
+    </Router>
   );
 }
 
