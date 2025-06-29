@@ -22,6 +22,9 @@ function ProcessDetailView({ onProcessAction }: ProcessDetailViewProps) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [expandedSubprocess, setExpandedSubprocess] = useState<string | null>(
+    null
+  );
 
   const refreshProcessData = async () => {
     if (!id) return;
@@ -98,12 +101,16 @@ function ProcessDetailView({ onProcessAction }: ProcessDetailViewProps) {
   const renderSubprocessSteps = (steps: { [key: string]: StepInfo }) => {
     return Object.entries(steps).map(([key, step]) => (
       <li key={key}>
-        <strong>{step.description}</strong>: {step.status}
+        <strong>{step.name}</strong>: {step.status}
         {step.errorMessage && (
           <span className="step-error"> (Error: {step.errorMessage})</span>
         )}
       </li>
     ));
+  };
+
+  const toggleSubprocess = (id: string) => {
+    setExpandedSubprocess(expandedSubprocess === id ? null : id);
   };
 
   return (
@@ -179,35 +186,49 @@ function ProcessDetailView({ onProcessAction }: ProcessDetailViewProps) {
       {subprocesses.length === 0 ? (
         <p>No subprocesses found for this process.</p>
       ) : (
-        <table className="subprocesses-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Last Updated</th>
-              <th>Steps</th>
-            </tr>
-          </thead>
-          <tbody>
-            {subprocesses.map((sub) => (
-              <tr key={sub.id}>
-                <td>{sub.id}</td>
-                <td>{sub.status}</td>
-                <td>{new Date(sub.createdAt).toLocaleString()}</td>
-                <td>{new Date(sub.updatedAt).toLocaleString()}</td>
-                <td>
+        <div className="subprocesses-list">
+          {subprocesses.map((sub) => (
+            <div key={sub.id} className="subprocess-card">
+              <div
+                className="subprocess-card-header"
+                onClick={() => toggleSubprocess(sub.id)}
+              >
+                <span>
+                  <strong>ID:</strong> {sub.id}
+                </span>
+                <span>
+                  <strong>Status:</strong> {sub.status}
+                </span>
+                <span
+                  className={`chevron ${
+                    expandedSubprocess === sub.id ? "expanded" : ""
+                  }`}
+                >
+                  &#9660;
+                </span>
+              </div>
+              {expandedSubprocess === sub.id && (
+                <div className="subprocess-card-body">
+                  <p>
+                    <strong>Created:</strong>{" "}
+                    {new Date(sub.createdAt).toLocaleString()}
+                  </p>
+                  <p>
+                    <strong>Last Updated:</strong>{" "}
+                    {new Date(sub.updatedAt).toLocaleString()}
+                  </p>
+                  <h4>Steps:</h4>
                   <ul>{renderSubprocessSteps(sub.steps)}</ul>
                   {sub.errorMessage && (
                     <p className="subprocess-error-message">
-                      Error: {sub.errorMessage}
+                      <strong>Error:</strong> {sub.errorMessage}
                     </p>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
       <Link to="/" className="back-link">
         Back to all processes

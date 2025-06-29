@@ -5,6 +5,7 @@ using Hangfire;
 using Hangfire.Mongo;
 using Hangfire.Mongo.Migration.Strategies;
 using Hangfire.Mongo.Migration.Strategies.Backup;
+using Microsoft.AspNetCore.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -114,16 +115,22 @@ if (isApiEnabled)
     // Enable CORS for frontend
     app.UseCors("FrontendPolicy");
 
-    app.MapGet("/", () => "Welcome to the Minimal Web API!").WithName("Root");
+    app.MapGet("/", () => "Welcome to the Minimal Web API!")
+        .WithName("Root")
+        .Produces<string>(StatusCodes.Status200OK);
 
-    app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).WithName("Health");
+    app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
+        .WithName("Health")
+        .Produces<object>(StatusCodes.Status200OK);
 
     app.MapGet("/ready", ([FromServices] StartupRecoveryService svc) =>
     {
         if (svc.RecoveryComplete)
             return Results.Ok(new { ready = true });
         return Results.StatusCode(503);
-    });
+    }).WithName("Ready") // Added WithName for consistency
+      .Produces<object>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status503ServiceUnavailable);
 
     app.MapPost("/processes", async (ProcessRequest request) =>
     {
@@ -154,14 +161,17 @@ if (isApiEnabled)
 
         await processesCollection.InsertOneAsync(newProcess);
         return Results.Created($"/processes/{newProcess.Id}", newProcess);
-    }).WithName("CreateProcess");
+    }).WithName("CreateProcess")
+      .Produces<Process>(StatusCodes.Status201Created)
+      .Produces(StatusCodes.Status400BadRequest);
 
     // Add an endpoint to list all processes
     app.MapGet("/processes", async () =>
     {
         var processes = await processesCollection.Find(_ => true).ToListAsync();
         return Results.Ok(processes);
-    }).WithName("GetAllProcesses");
+    }).WithName("GetAllProcesses")
+      .Produces<List<Process>>(StatusCodes.Status200OK);
 
     // Add an endpoint to find a process by ID
     app.MapGet("/processes/{id}", async (string id) =>
@@ -173,7 +183,10 @@ if (isApiEnabled)
 
         var process = await processesCollection.Find(p => p.Id == objectId).FirstOrDefaultAsync();
         return process is not null ? Results.Ok(process) : Results.NotFound();
-    }).WithName("GetProcessById");
+    }).WithName("GetProcessById")
+      .Produces<Process>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest)
+      .Produces(StatusCodes.Status404NotFound);
 
     // Update the endpoint to flag a Process as 'NotStarted' and update its timestamp
     app.MapPost("/processes/{id}/start", async (string id, IBackgroundJobClient backgroundJobClient) =>
@@ -220,7 +233,10 @@ if (isApiEnabled)
         await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process);
 
         return Results.Ok($"Process has been queued with Hangfire (Job ID: {hangfireJobId}).");
-    }).WithName("StartProcess");
+    }).WithName("StartProcess")
+      .Produces<string>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest)
+      .Produces(StatusCodes.Status404NotFound);
 
     // Add an endpoint to cancel a running Process
     app.MapPost("/processes/{id}/cancel", async (string id, IBackgroundJobClient backgroundJobClient) =>
@@ -254,7 +270,10 @@ if (isApiEnabled)
         // The ProcessJobExecutor's cancellation handling will update the process status.
         return deleted ? Results.Ok($"Cancellation request sent for Hangfire job {process.HangfireJobId}.")
                        : Results.BadRequest($"Could not cancel Hangfire job {process.HangfireJobId}. It might have already completed or failed.");
-    }).WithName("CancelProcess");
+    }).WithName("CancelProcess")
+      .Produces<string>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest)
+      .Produces(StatusCodes.Status404NotFound);
 
     // Add an endpoint to revert a previously cancelled or interrupted Process
     app.MapPost("/processes/{id}/revert", async (string id) =>
@@ -299,7 +318,10 @@ if (isApiEnabled)
         }
 
         return Results.Ok("Process and its Subprocesses have been reverted to their original state.");
-    }).WithName("RevertProcess");
+    }).WithName("RevertProcess")
+      .Produces<string>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest)
+      .Produces(StatusCodes.Status404NotFound);
 
     // Add an endpoint to resume an Interrupted or NotStarted Process (only resumes incomplete subprocesses/steps)
     app.MapPost("/processes/{id}/resume", async (string id, IBackgroundJobClient backgroundJobClient) =>
@@ -344,7 +366,10 @@ if (isApiEnabled)
         process.ErrorMessage = null; // Clear previous errors
         await processesCollection.ReplaceOneAsync(p => p.Id == objectId, process);
         return Results.Ok($"Process resume has been queued with Hangfire (Job ID: {hangfireJobId}).");
-    }).WithName("ResumeProcess");
+    }).WithName("ResumeProcess")
+      .Produces<string>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest)
+      .Produces(StatusCodes.Status404NotFound);
 
     // Add an endpoint to list all Subprocesses
     app.MapGet("/subprocesses", async () =>
@@ -352,7 +377,8 @@ if (isApiEnabled)
         var subprocessCollection = database.GetCollection<Subprocess>("SubProcess");
         var subprocesses = await subprocessCollection.Find(_ => true).ToListAsync();
         return Results.Ok(subprocesses);
-    }).WithName("GetAllSubprocesses");
+    }).WithName("GetAllSubprocesses")
+      .Produces<List<Subprocess>>(StatusCodes.Status200OK);
 
     // Add an endpoint to find a Subprocess by ID
     app.MapGet("/subprocesses/{id}", async (string id) =>
@@ -365,7 +391,10 @@ if (isApiEnabled)
         var subprocessCollection = database.GetCollection<Subprocess>("SubProcess");
         var subprocess = await subprocessCollection.Find(s => s.Id == objectId).FirstOrDefaultAsync();
         return subprocess is not null ? Results.Ok(subprocess) : Results.NotFound();
-    }).WithName("GetSubprocessById");
+    }).WithName("GetSubprocessById")
+      .Produces<Subprocess>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest)
+      .Produces(StatusCodes.Status404NotFound);
 
     // Add an endpoint to find Subprocesses by ParentProcessId
     app.MapGet("/processes/{parentProcessId}/subprocesses", async (string parentProcessId) =>
@@ -378,7 +407,9 @@ if (isApiEnabled)
         var subprocessCollection = database.GetCollection<Subprocess>("SubProcess");
         var subprocesses = await subprocessCollection.Find(s => s.ParentProcessId == objectId).ToListAsync();
         return Results.Ok(subprocesses);
-    }).WithName("GetSubprocessesByParentProcessId");
+    }).WithName("GetSubprocessesByParentProcessId")
+      .Produces<List<Subprocess>>(StatusCodes.Status200OK)
+      .Produces(StatusCodes.Status400BadRequest);
 }
 
 app.Run();

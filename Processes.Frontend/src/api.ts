@@ -25,6 +25,7 @@ export interface Subprocess {
 }
 
 export interface StepInfo {
+  name: string;
   status: string;
   description: string;
   startedAt?: string;

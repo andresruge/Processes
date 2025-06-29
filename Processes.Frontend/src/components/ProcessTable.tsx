@@ -23,34 +23,84 @@ function ProcessTable({
   onProcessAction,
 }: ProcessTableProps) {
   const navigate = useNavigate();
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  type ActionType = "start" | "cancel" | "revert" | "resume";
+  const [loadingAction, setLoadingAction] = useState<{
+    processId: string;
+    action: ActionType;
+  } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const actionConfig: {
+    action: ActionType;
+    label: string;
+    loadingLabel: string;
+    className: string;
+    isActionDisabled: (status: string) => boolean;
+  }[] = [
+    {
+      action: "start",
+      label: "Start",
+      loadingLabel: "Starting...",
+      className: "start",
+      isActionDisabled: (status) =>
+        status === "Running" || status === "Completed",
+    },
+    {
+      action: "cancel",
+      label: "Cancel",
+      loadingLabel: "Cancelling...",
+      className: "cancel",
+      isActionDisabled: (status) =>
+        status === "Completed" || status === "Cancelled",
+    },
+    {
+      action: "revert",
+      label: "Revert",
+      loadingLabel: "Reverting...",
+      className: "revert",
+      isActionDisabled: (status) =>
+        status !== "Cancelled" && status !== "Interrupted",
+    },
+    {
+      action: "resume",
+      label: "Resume",
+      loadingLabel: "Resuming...",
+      className: "resume",
+      isActionDisabled: (status) =>
+        status === "Running" || status === "Completed",
+    },
+  ];
+
+  const getStatusClass = (status: string) => {
+    switch (status) {
+      case "Running":
+        return "status-running";
+      case "Completed":
+        return "status-completed";
+      case "Cancelled":
+        return "status-cancelled";
+      case "Interrupted":
+        return "status-interrupted";
+      default:
+        return "status-pending";
+    }
+  };
 
   const handleRowClick = (id: string) => {
     navigate(`/processes/${id}`);
   };
 
-  const handleAction = async (
-    action: "start" | "cancel" | "revert" | "resume",
-    processId: string
-  ) => {
-    setActionLoadingId(processId);
+  const handleAction = async (action: ActionType, processId: string) => {
+    setLoadingAction({ processId, action });
     setActionError(null);
     try {
-      switch (action) {
-        case "start":
-          await startProcess(processId);
-          break;
-        case "cancel":
-          await cancelProcess(processId);
-          break;
-        case "revert":
-          await revertProcess(processId);
-          break;
-        case "resume":
-          await resumeProcess(processId);
-          break;
-      }
+      const actions: Record<ActionType, (id: string) => Promise<void>> = {
+        start: startProcess,
+        cancel: cancelProcess,
+        revert: revertProcess,
+        resume: resumeProcess,
+      };
+      await actions[action](processId);
       await onProcessAction(); // Refresh the main process list
     } catch (e) {
       if (e instanceof Error) {
@@ -59,7 +109,7 @@ function ProcessTable({
         setActionError(`Unknown error during ${action} action.`);
       }
     } finally {
-      setActionLoadingId(null);
+      setLoadingAction(null);
     }
   };
 
@@ -73,9 +123,7 @@ function ProcessTable({
 
   return (
     <div className="process-table-container">
-      {actionError && (
-        <div className="process-table-action-error">{actionError}</div>
-      )}
+      {actionError && <div className="process-table-error">{actionError}</div>}
       <table className="process-table">
         <thead className="process-table-header">
           <tr>
@@ -93,80 +141,60 @@ function ProcessTable({
               </td>
             </tr>
           ) : (
-            processes.map((proc) => (
-              <tr key={proc.id} className="process-table-row">
-                <td
-                  className="process-table-td process-table-td-name"
+            processes.map((proc) => {
+              const isAnyActionLoading = loadingAction?.processId === proc.id;
+              return (
+                <tr
+                  key={proc.id}
+                  className="process-table-row"
                   onClick={() => handleRowClick(proc.id)}
                 >
-                  {proc.name}
-                </td>
-                <td className="process-table-td process-table-td-status">
-                  {proc.status}
-                </td>
-                <td className="process-table-td process-table-td-created">
-                  {new Date(proc.createdAt).toLocaleString()}
-                </td>
-                <td className="process-table-td process-table-td-actions">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAction("start", proc.id);
-                    }}
-                    disabled={
-                      actionLoadingId === proc.id ||
-                      proc.status === "Running" ||
-                      proc.status === "Completed"
-                    }
-                    className="action-button start"
-                  >
-                    {actionLoadingId === proc.id ? "..." : "Start"}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAction("cancel", proc.id);
-                    }}
-                    disabled={
-                      actionLoadingId === proc.id ||
-                      proc.status === "Completed" ||
-                      proc.status === "Cancelled"
-                    }
-                    className="action-button cancel"
-                  >
-                    {actionLoadingId === proc.id ? "..." : "Cancel"}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAction("revert", proc.id);
-                    }}
-                    disabled={
-                      actionLoadingId === proc.id ||
-                      (proc.status !== "Cancelled" &&
-                        proc.status !== "Interrupted")
-                    }
-                    className="action-button revert"
-                  >
-                    {actionLoadingId === proc.id ? "..." : "Revert"}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAction("resume", proc.id);
-                    }}
-                    disabled={
-                      actionLoadingId === proc.id ||
-                      proc.status === "Running" ||
-                      proc.status === "Completed"
-                    }
-                    className="action-button resume"
-                  >
-                    {actionLoadingId === proc.id ? "..." : "Resume"}
-                  </button>
-                </td>
-              </tr>
-            ))
+                  <td className="process-table-td process-table-td-name">
+                    {proc.name}
+                  </td>
+                  <td className="process-table-td">
+                    <span
+                      className={`status-badge ${getStatusClass(proc.status)}`}
+                    >
+                      {proc.status}
+                    </span>
+                  </td>
+                  <td className="process-table-td process-table-td-created">
+                    {new Date(proc.createdAt).toLocaleString()}
+                  </td>
+                  <td className="process-table-td process-table-td-actions">
+                    {actionConfig.map(
+                      ({
+                        action,
+                        label,
+                        loadingLabel,
+                        className,
+                        isActionDisabled,
+                      }) => {
+                        const isLoading =
+                          isAnyActionLoading && loadingAction.action === action;
+                        return (
+                          <button
+                            key={action}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAction(action, proc.id);
+                            }}
+                            disabled={
+                              isAnyActionLoading ||
+                              isActionDisabled(proc.status)
+                            }
+                            className={`action-button ${className}`}
+                          >
+                            {isLoading ? loadingLabel : label}
+                          </button>
+                        );
+                      }
+                    )}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
