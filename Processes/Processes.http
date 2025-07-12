@@ -12,6 +12,12 @@ Accept: application/json
 
 ###
 
+# Ready endpoint
+GET {{Processes_HostAddress}}/ready
+Accept: application/json
+
+###
+
 # Create a new Process
 POST {{Processes_HostAddress}}/processes
 Content-Type: application/json
@@ -32,6 +38,48 @@ Accept: application/json
 
 # Get a Process by ID
 GET {{Processes_HostAddress}}/processes/680a99a09b269cb2fb59760f
+Accept: application/json
+
+###
+
+# Start a Process
+POST {{Processes_HostAddress}}/processes/680a99a09b269cb2fb59760f/start
+Accept: application/json
+
+###
+
+# Cancel a Process
+POST {{Processes_HostAddress}}/processes/680a99a09b269cb2fb59760f/cancel
+Accept: application/json
+
+###
+
+# Revert a Process
+POST {{Processes_HostAddress}}/processes/680a99a09b269cb2fb59760f/revert
+Accept: application/json
+
+###
+
+# Resume a Process
+POST {{Processes_HostAddress}}/processes/680a99a09b269cb2fb59760f/resume
+Accept: application/json
+
+###
+
+# List all Subprocesses
+GET {{Processes_HostAddress}}/subprocesses
+Accept: application/json
+
+###
+
+# Get a Subprocess by ID
+GET {{Processes_HostAddress}}/subprocesses/680a99a09b269cb2fb59760f
+Accept: application/json
+
+###
+
+# Get Subprocesses by Parent Process ID
+GET {{Processes_HostAddress}}/processes/680a99a09b269cb2fb59760f/subprocesses
 Accept: application/json
 
 ###
